@@ -5,11 +5,17 @@
 // Fmap parses flash maps.
 //
 // Synopsis:
-//     fmap [OPTIONS] [FILE]
+//     fmap checksum [md5|sha1|sha256] FILE
+//     fmap extract FILE
+//     fmap json FILE
+//     fmap json FILE
+//     fmap summary FILE
+//     fmap usage FILE
+//     fmap verify FILE
 //
 // Description:
 //     Return 0 if the flash map is valid and 1 otherwise. Detailed information
-//     is printed to stderr. If FILE is not specified, read from stdin.
+//     is printed to stderr.
 //
 //     This implementation is based off of https://github.com/dhendrix/flashmap.
 //
@@ -48,6 +54,20 @@ var (
 	jsonRead  = flag.String("jr", "", "print json representation of the fmap to FILE")
 	jsonWrite = flag.String("jw", "", "read json representation and replace the fmap")
 )
+
+var commands = []struct {
+	name  string
+	nArgs int
+	f     func(args []string) error
+}{
+	{"checksum", 4, checksum},
+	{"extract", 3, extract},
+	{"json", 3, json},
+	{"json", 3, json},
+	{"summary", 3, summary},
+	{"usage", 3, usage},
+	{"verify", 3, verify},
+}
 
 var hashFuncs = map[string](func() hash.Hash){
 	"md5":    md5.New,
@@ -173,7 +193,22 @@ var btoi = map[bool]int{
 	true:  1,
 }
 
+func usage() {
+	fmt.Printf("Usage: %s CMD [ARGS...] FILE\n", os.Args[0])
+	for _, c := range commands {
+		fmt.Printf(" %s\n", c.name)
+	}
+	os.Exit(2)
+}
+
 func main() {
+	if len(os.Args) <= 2 {
+		usage()
+	}
+
+
+
+
 	flag.Parse()
 
 	// Validate flags
