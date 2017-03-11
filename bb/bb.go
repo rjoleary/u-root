@@ -2,20 +2,18 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// bb converts standalone u-root tools to shell builtins.
-// It copies and converts a set of u-root utilities into a directory called bbsh.
-// It assumes nothing; all files it needs are always copied, no matter what
-// is in bbsh.
-// bb needs to know where the uroot you are using is so it can find command source.
-// UROOT=/home/rminnich/projects/u-root/u-root/
-// bb needs to know the arch:
-// GOARCH=amd64
-// bb needs to know where the tools are, and they are in two places, the place it created them
-// and the place where packages live:
-// GOPATH=/home/rminnich/projects/u-root/u-root/bb/bbsh:/home/rminnich/projects/u-root/u-root
-// bb needs to have a GOROOT
-// GOROOT=/home/rminnich/projects/u-root/go1.5/go/
-// There are no defaults.
+// mkbb compiles Go packages into a busybox.
+//
+// Synopsis:
+//	bb [ARGS...] [PACKAGES...]
+//
+// Description:
+//      "$GOPATH/github.com/u-root/u-root/cmds/*"
+//
+// Options:
+//     -leave_tmp: do not delete intermediate files
+//     -v:         verbose mode
+//     -vv:        extra verbose mode
 package main
 
 import (
@@ -37,32 +35,18 @@ import (
 	"golang.org/x/tools/imports"
 )
 
+var (
+	leaveTmp = flag.Boolean("leave_tmp", false, "do not delete intermediate files")
+	verbose1 = flag.Boolean("v", false, "verbose mode")
+	verbose2 = flag.Boolean("vv", false, "extra verbose mode")
+)
+
+var (
+	v = log.New(ioutil.Discard, "", 0)
+	vv = log.New(ioutil.Discard, "", 0)
+)
+
 const (
-	cmdFunc = `package main
-import "github.com/u-root/u-root/bb/bbsh/cmds/{{.CmdName}}"
-func _forkbuiltin_{{.CmdName}}(c *Command) (err error) {
-os.Args = fixArgs("{{.CmdName}}", append([]string{c.cmd}, c.argv...))
-{{.CmdName}}.Main()
-return
-}
-
-func init() {
-	addForkBuiltIn("{{.CmdName}}", _forkbuiltin_{{.CmdName}})
-}
-`
-	fixArgs = `
-package main
-
-func fixArgs(cmd string, args[]string) (s []string) {
-	for _, v := range args {
-		if v[0] == '-' {
-			v = "-" + cmd + "." + v[1:]
-		}
-		s = append(s, v)
-	}
-	return
-}
-`
 	initGo = `
 package main
 import (
@@ -91,92 +75,6 @@ func init() {
 `
 )
 
-func debugPrint(f string, s ...interface{}) {
-	log.Printf(f, s...)
-}
-
-func nodebugPrint(f string, s ...interface{}) {
-}
-
-const cmds = "cmds"
-
-var (
-	debug      = nodebugPrint
-	defaultCmd = []string{
-		"cat",
-		"cmp",
-		"comm",
-		"cp",
-		"date",
-		"dd",
-		"dhcp",
-		"dmesg",
-		"echo",
-		"freq",
-		"grep",
-		"ip",
-		//"kexec",
-		"ls",
-		"mkdir",
-		"mount",
-		"netcat",
-		"ping",
-		"printenv",
-		"rm",
-		"seq",
-		"srvfiles",
-		"tcz",
-		"uname",
-		"uniq",
-		"unshare",
-		"wc",
-		"wget",
-	}
-
-	// fixFlag tells by existence if an argument needs to be fixed.
-	// The value tells which argument.
-	fixFlag = map[string]int{
-		"Bool":        0,
-		"BoolVar":     1,
-		"Duration":    0,
-		"DurationVar": 1,
-		"Float64":     0,
-		"Float64Var":  1,
-		"Int":         0,
-		"Int64":       0,
-		"Int64Var":    1,
-		"IntVar":      1,
-		"String":      0,
-		"StringVar":   1,
-		"Uint":        0,
-		"Uint64":      0,
-		"Uint64Var":   1,
-		"UintVar":     1,
-		"Var":         1,
-	}
-	dumpAST = flag.Bool("D", false, "Dump the AST")
-)
-
-var config struct {
-	Args     []string
-	CmdName  string
-	FullPath string
-	Src      string
-	Uroot    string
-	Cwd      string
-	Bbsh     string
-
-	Goroot    string
-	Gosrcroot string
-	Arch      string
-	Goos      string
-	Gopath    string
-	TempDir   string
-	Go        string
-	Debug     bool
-	Fail      bool
-}
-
 func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 	// Inspect the AST and change all instances of main()
 	isMain := false
@@ -186,9 +84,7 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 			x.Name.Name = config.CmdName
 		case *ast.FuncDecl:
 			if x.Name.Name == "main" {
-				x.Name.Name = fmt.Sprintf("Main")
-				// Append a return.
-				x.Body.List = append(x.Body.List, &ast.ReturnStmt{})
+				x.Name.Name = "Main"
 				isMain = true
 			}
 
@@ -213,9 +109,6 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 		return true
 	})
 
-	if *dumpAST {
-		ast.Fprint(os.Stderr, fset, f, nil)
-	}
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, f); err != nil {
 		panic(err)
@@ -283,13 +176,61 @@ func oneCmd() {
 		}
 	}
 }
-func main() {
-	var err error
-	doConfig()
 
-	if err := os.MkdirAll(config.Bbsh, 0755); err != nil {
-		log.Fatalf("%v", err)
+type package_ string
+type goFile string
+
+func (p package_) convert() {
+	err = filepath.Walk(p, func(name string, fi os.FileInfo, err error) {
+
+	})
+}
+
+func (f goFile) convert() {
+
+}
+
+func start() {
+	if *verbose {
+		info = log.New(os.Stderr, "", log.LstdFlags)
 	}
+
+	// Create temp directory.
+	tmpDir, err := ioutil.TempDir("", "Test")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if !leave_tmp {
+			info.Printf("left temp dir at %#v", tmpDir)
+		} else {
+			os.RemoveAll(tmpDir)
+		}
+	}()
+
+	// Gather list of packages.
+	packages := flag.Args()
+	if len(packages) == 0 {
+		matches, _ := filepath.Glob("github.com/u-root/u-root/cmds/*")
+		if len(matches) == 0 {
+			log.Fatal("no packages")
+		}
+		packages = matches
+	}
+
+	for _, p := packages() {
+		package_(p).convert()
+	}
+
+}
+
+func main() {
+	flag.Parse()
+	if err := start(); err != nil {
+		log.Fatal(err)
+	}
+}
+
 
 	if len(flag.Args()) > 0 {
 		config.Args = []string{}
@@ -316,33 +257,3 @@ func main() {
 	if err := ioutil.WriteFile(path.Join(config.Bbsh, "init.go"), []byte(initGo), 0644); err != nil {
 		log.Fatalf("%v\n", err)
 	}
-	// copy all shell files
-
-	err = filepath.Walk(path.Join(config.Uroot, cmds, "rush"), func(name string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if fi.IsDir() {
-			return nil
-		}
-		b, err := ioutil.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		if err := ioutil.WriteFile(path.Join(config.Bbsh, fi.Name()), b, 0644); err != nil {
-			return err
-		}
-
-		return nil
-	})
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	if err := ioutil.WriteFile(path.Join(config.Bbsh, "fixargs.go"), []byte(fixArgs), 0644); err != nil {
-		log.Fatalf("%v\n", err)
-	}
-
-	buildinit()
-	ramfs()
-}
