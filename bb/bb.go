@@ -21,7 +21,6 @@ package main
 import (
 	"bytes"
 	"flag"
-	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -31,7 +30,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"text/template"
 
 	"golang.org/x/tools/imports"
@@ -41,26 +39,12 @@ const (
 	cmdFunc = `package main
 import "github.com/u-root/u-root/bb/bbsh/cmds/{{.CmdName}}"
 func _forkbuiltin_{{.CmdName}}(c *Command) (err error) {
-os.Args = fixArgs("{{.CmdName}}", append([]string{c.cmd}, c.argv...))
 {{.CmdName}}.Main()
 return
 }
 
 func init() {
 	addForkBuiltIn("{{.CmdName}}", _forkbuiltin_{{.CmdName}})
-}
-`
-	fixArgs = `
-package main
-
-func fixArgs(cmd string, args[]string) (s []string) {
-	for _, v := range args {
-		if v[0] == '-' {
-			v = "-" + cmd + "." + v[1:]
-		}
-		s = append(s, v)
-	}
-	return
 }
 `
 	initGo = `
@@ -182,37 +166,123 @@ var config struct {
 }
 
 func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
+	// Change the package name
+	f.Name.Name = config.CmdName
+
+	// Add bbshare import.
+	//AddImport(fset, f, "github.com/u-root/u-root/bb/bbshare"
+	importBBShare := &ast.GenDecl{
+		TokPos: f.Package,
+		Tok: token.IMPORT,
+		Specs: []ast.Spec {
+			&ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind: token.STRING,
+					Value: "\"github.com/u-root/u-root/bb/bbshare\"",
+				},
+			},
+		},
+	}
+	f.Decls = append([]ast.Decl{importBBShare}, f.Decls...)
+	//f.Imports = append(f.Imports, &ast.ImportSpec{nil, nil, &bbshare, nil, 0})
+	//importBBShare := &ast.GenDecl{
+		//TokPos
+	/*
+     8  .  Decls: []ast.Decl (len = 13) {
+     9  .  .  0: *ast.GenDecl {
+    10  .  .  .  Doc: nil
+    11  .  .  .  TokPos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:7:1
+    12  .  .  .  Tok: import
+    13  .  .  .  Lparen: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:7:8
+    14  .  .  .  Specs: []ast.Spec (len = 7) {
+    15  .  .  .  .  0: *ast.ImportSpec {
+    16  .  .  .  .  .  Doc: nil
+    17  .  .  .  .  .  Name: nil
+    18  .  .  .  .  .  Path: *ast.BasicLit {
+    19  .  .  .  .  .  .  ValuePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:8:2
+    20  .  .  .  .  .  .  Kind: STRING
+    21  .  .  .  .  .  .  Value: "\"fmt\""
+    22  .  .  .  .  .  }
+    23  .  .  .  .  .  Comment: nil
+    24  .  .  .  .  .  EndPos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:8:7
+    25  .  .  .  .  }
+    */
+
+	//ast.SortImports(fset, f)
+
 	// Inspect the AST and change all instances of main()
 	isMain := false
+
+	// Before:
+	//     func main() {
+	//         ...
+	//     }
+	//
+	// After:
+	//     func init() {
+	//         bbshare.addMain("$PACKAGE", func() {
+	//             ...
+	//         })
+	//     }
 	ast.Inspect(f, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.File:
-			x.Name.Name = config.CmdName
-		case *ast.FuncDecl:
+		if x, ok := n.(*ast.FuncDecl); ok {
 			if x.Name.Name == "main" {
-				x.Name.Name = fmt.Sprintf("Main")
-				// Append a return.
-				x.Body.List = append(x.Body.List, &ast.ReturnStmt{})
+				x.Name.Name = "init"
 				isMain = true
 			}
 
-		case *ast.CallExpr:
-			debug("%v %v\n", reflect.TypeOf(n), n)
-			switch z := x.Fun.(type) {
-			case *ast.SelectorExpr:
-				// somebody tell me how to do this.
-				sel := fmt.Sprintf("%v", z.X)
-				// TODO: Need to have fixFlag and fixFlagVar
-				// as the Var variation has name in the SECOND argument.
-				if sel == "flag" {
-					if ix, ok := fixFlag[z.Sel.Name]; ok {
-						switch zz := x.Args[ix].(type) {
-						case *ast.BasicLit:
-							zz.Value = "\"" + config.CmdName + "." + zz.Value[1:]
-						}
-					}
-				}
-			}
+			*ast.FuncDecl {
+Doc: nil
+Recv: nil
+Name: *ast.Ident {
+.  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:6
+.  Name: "init"
+.  Obj: nil
+}
+Type: *ast.FuncType {
+.  Func: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:1
+  1110  .  .  .  .  Params: *ast.FieldList {
+  1111  .  .  .  .  .  Opening: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:10
+  1112  .  .  .  .  .  List: nil
+  1113  .  .  .  .  .  Closing: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:11
+  1114  .  .  .  .  }
+  1115  .  .  .  .  Results: nil
+  1116  .  .  .  }
+  1117  .  .  .  Body: *ast.BlockStmt {
+  1118  .  .  .  .  Lbrace: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:13
+  1119  .  .  .  .  List: []ast.Stmt (len = 1) {
+  1120  .  .  .  .  .  0: *ast.ExprStmt {
+  1121  .  .  .  .  .  .  X: *ast.CallExpr {
+  1122  .  .  .  .  .  .  .  Fun: *ast.SelectorExpr {
+  1123  .  .  .  .  .  .  .  .  X: *ast.Ident {
+  1124  .  .  .  .  .  .  .  .  .  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:2
+  1125  .  .  .  .  .  .  .  .  .  Name: "bbshare"
+  1126  .  .  .  .  .  .  .  .  .  Obj: nil
+  1127  .  .  .  .  .  .  .  .  }
+  1128  .  .  .  .  .  .  .  .  Sel: *ast.Ident {
+  1129  .  .  .  .  .  .  .  .  .  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:10
+  1130  .  .  .  .  .  .  .  .  .  Name: "addMain"
+  1131  .  .  .  .  .  .  .  .  .  Obj: nil
+  1132  .  .  .  .  .  .  .  .  }
+  1133  .  .  .  .  .  .  .  }
+  1134  .  .  .  .  .  .  .  Lparen: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:17
+  1135  .  .  .  .  .  .  .  Args: []ast.Expr (len = 2) {
+  1136  .  .  .  .  .  .  .  .  0: *ast.BasicLit {
+  1137  .  .  .  .  .  .  .  .  .  ValuePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:18
+  1138  .  .  .  .  .  .  .  .  .  Kind: STRING
+  1139  .  .  .  .  .  .  .  .  .  Value: "\"$PACKAGE\""
+  1140  .  .  .  .  .  .  .  .  }
+  1141  .  .  .  .  .  .  .  .  1: *ast.FuncLit {
+  1142  .  .  .  .  .  .  .  .  .  Type: *ast.FuncType {
+  1143  .  .  .  .  .  .  .  .  .  .  Func: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:30
+  1144  .  .  .  .  .  .  .  .  .  .  Params: *ast.FieldList {
+  1145  .  .  .  .  .  .  .  .  .  .  .  Opening: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:34
+  1146  .  .  .  .  .  .  .  .  .  .  .  List: nil
+  1147  .  .  .  .  .  .  .  .  .  .  .  Closing: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:35
+  1148  .  .  .  .  .  .  .  .  .  .  }
+  1149  .  .  .  .  .  .  .  .  .  .  Results: nil
+  1150  .  .  .  .  .  .  .  .  .  }
+
 		}
 		return true
 	})
@@ -287,6 +357,7 @@ func oneCmd() {
 		}
 	}
 }
+
 func main() {
 	var err error
 	doConfig()
@@ -341,10 +412,6 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("%v", err)
-	}
-
-	if err := ioutil.WriteFile(path.Join(config.Bbsh, "fixargs.go"), []byte(fixArgs), 0644); err != nil {
-		log.Fatalf("%v\n", err)
 	}
 
 	buildinit()
