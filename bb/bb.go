@@ -37,15 +37,7 @@ import (
 
 const (
 	cmdFunc = `package main
-import "github.com/u-root/u-root/bb/bbsh/cmds/{{.CmdName}}"
-func _forkbuiltin_{{.CmdName}}(c *Command) (err error) {
-{{.CmdName}}.Main()
-return
-}
-
-func init() {
-	addForkBuiltIn("{{.CmdName}}", _forkbuiltin_{{.CmdName}})
-}
+import _ "github.com/u-root/u-root/bb/bbsh/cmds/{{.CmdName}}"
 `
 	initGo = `
 package main
@@ -166,11 +158,25 @@ var config struct {
 }
 
 func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
-	// Change the package name
+	// Change the package name.
+	//
+	// Before:
+	//     package ...
+	//
+	// After:
+	//     package ${config.CmdName}
 	f.Name.Name = config.CmdName
 
-	// Add bbshare import.
-	//AddImport(fset, f, "github.com/u-root/u-root/bb/bbshare"
+	// Add the bbshare import.
+	//
+	// Before:
+	//      package ...
+	//      ...
+	//
+	// After:
+	//      package ...
+	//      import "github.com/u-root/u-root/bb/bbshare"
+	//      ...
 	importBBShare := &ast.GenDecl{
 		TokPos: f.Package,
 		Tok: token.IMPORT,
@@ -184,35 +190,143 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 		},
 	}
 	f.Decls = append([]ast.Decl{importBBShare}, f.Decls...)
-	//f.Imports = append(f.Imports, &ast.ImportSpec{nil, nil, &bbshare, nil, 0})
-	//importBBShare := &ast.GenDecl{
-		//TokPos
-	/*
-     8  .  Decls: []ast.Decl (len = 13) {
-     9  .  .  0: *ast.GenDecl {
-    10  .  .  .  Doc: nil
-    11  .  .  .  TokPos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:7:1
-    12  .  .  .  Tok: import
-    13  .  .  .  Lparen: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:7:8
-    14  .  .  .  Specs: []ast.Spec (len = 7) {
-    15  .  .  .  .  0: *ast.ImportSpec {
-    16  .  .  .  .  .  Doc: nil
-    17  .  .  .  .  .  Name: nil
-    18  .  .  .  .  .  Path: *ast.BasicLit {
-    19  .  .  .  .  .  .  ValuePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:8:2
-    20  .  .  .  .  .  .  Kind: STRING
-    21  .  .  .  .  .  .  Value: "\"fmt\""
-    22  .  .  .  .  .  }
-    23  .  .  .  .  .  Comment: nil
-    24  .  .  .  .  .  EndPos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/fileinfo_linux.go:8:7
-    25  .  .  .  .  }
-    */
 
-	//ast.SortImports(fset, f)
+	// Translate the init functions.
+	//
+	// Before:
+	//     func init() {
+	//         ...
+	//     }
+	//
+	// After:
+	//     func init() {
+	//         bbshare.AddInit("${config.CmdName}", func() {
+	//             ...
+	//         })
+	//     }
+	ast.Inspect(f, func(n ast.Node) bool {
+		if funcDecl, ok := n.(*ast.FuncDecl); ok && funcDecl.Name.Name == "init" {
+			// Replace the body.
+			body := funcDecl.Body;
+			funcDecl.Body = &ast.BlockStmt {
+				List: []ast.Stmt{
+					&ast.ExprStmt {
+						X: &ast.CallExpr {
+							Fun: &ast.SelectorExpr {
+								X: ast.NewIdent("bbshare"),
+								Sel: ast.NewIdent("AddInit"),
+							},
+							Args: []ast.Expr {
+								&ast.BasicLit {
+									Kind: token.STRING,
+									Value: "\"" + config.CmdName + "\"",
+								},
+								&ast.FuncLit {
+									Type: &ast.FuncType {
+										Params: &ast.FieldList {},
+									},
+									Body: body,
+								},
+							},
+						},
+					},
+				},
+			}
 
-	// Inspect the AST and change all instances of main()
-	isMain := false
 
+		}
+		return true
+	})
+
+	// Translate variable initializations.
+	//
+	// Before:
+	//     var (
+	//         x0 = e0
+	//         x1 = e1
+	//         ...
+	//         xn = en
+	//     )
+	//
+	// After:
+	//     var (
+	//         x0 t0
+	//         x1 t1
+	//         ...
+	//         xn tn
+	//     )
+	//     func init() {
+	//         bbshare.AddVarInit("${config.CmdName}", func() {
+	//             x0 = e0
+	//             x1 = e1
+	//             ...
+	//             xn = en
+	//         })
+	//     }
+	valueSpecs := []*ast.ValueSpec{}
+	for _, decl := range f.Decls {
+		if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.VAR {
+			for _, spec := range genDecl.Specs {
+				if spec, ok := spec.(*ast.ValueSpec); ok {
+					valueSpecs = append(valueSpecs, spec)
+				}
+			}
+		}
+	}
+	assignStmts := []ast.Stmt{}
+	for _, valueSpec := range valueSpecs {
+		if valueSpec.Values == nil {
+			continue // declaration, but no initializer
+		}
+		assignStmt := &ast.AssignStmt{
+			Tok: token.ASSIGN,
+			Rhs: valueSpec.Values, // TODO: we accidently turned our tree into a DAG here
+		}
+		for _, name := range valueSpec.Names {
+			assignStmt.Lhs = append(assignStmt.Lhs, name)
+		}
+		assignStmts = append(assignStmts, assignStmt)
+	}
+	f.Decls = append(f.Decls, &ast.FuncDecl{
+		Name: ast.NewIdent("init"),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{},
+			Results: nil,
+		},
+		Body: &ast.BlockStmt {
+			List: []ast.Stmt{
+				&ast.ExprStmt {
+					X: &ast.CallExpr {
+						Fun: &ast.SelectorExpr {
+							X: &ast.Ident{
+								Name: "bbshare",
+							},
+							Sel: &ast.Ident {
+								Name: "AddVarInit",
+							},
+						},
+						Args: []ast.Expr {
+							&ast.BasicLit {
+								Kind: token.STRING,
+								Value: "\"" + config.CmdName + "\"",
+							},
+							&ast.FuncLit {
+								Type: &ast.FuncType {
+									Params: &ast.FieldList {},
+								},
+								Body: &ast.BlockStmt {
+									List: assignStmts,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Translate the main function.
+	//
 	// Before:
 	//     func main() {
 	//         ...
@@ -220,69 +334,48 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 	//
 	// After:
 	//     func init() {
-	//         bbshare.addMain("$PACKAGE", func() {
+	//         bbshare.AddMain("${config.CmdName}", func() {
 	//             ...
 	//         })
 	//     }
+	isMain := false
 	ast.Inspect(f, func(n ast.Node) bool {
-		if x, ok := n.(*ast.FuncDecl); ok {
-			if x.Name.Name == "main" {
-				x.Name.Name = "init"
-				isMain = true
+		if funcDecl, ok := n.(*ast.FuncDecl); ok && funcDecl.Name.Name == "main" {
+			isMain = true
+
+			// Replace the name.
+			funcDecl.Name.Name = "init"
+
+			// Replace the body.
+			body := funcDecl.Body;
+			funcDecl.Body = &ast.BlockStmt {
+				List: []ast.Stmt{
+					&ast.ExprStmt {
+						X: &ast.CallExpr {
+							Fun: &ast.SelectorExpr {
+								X: &ast.Ident{
+									Name: "bbshare",
+								},
+								Sel: &ast.Ident {
+									Name: "AddMain",
+								},
+							},
+							Args: []ast.Expr {
+								&ast.BasicLit {
+									Kind: token.STRING,
+									Value: "\"" + config.CmdName + "\"",
+								},
+								&ast.FuncLit {
+									Type: &ast.FuncType {
+										Params: &ast.FieldList {},
+									},
+									Body: body,
+								},
+							},
+						},
+					},
+				},
 			}
-
-			*ast.FuncDecl {
-Doc: nil
-Recv: nil
-Name: *ast.Ident {
-.  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:6
-.  Name: "init"
-.  Obj: nil
-}
-Type: *ast.FuncType {
-.  Func: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:1
-  1110  .  .  .  .  Params: *ast.FieldList {
-  1111  .  .  .  .  .  Opening: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:10
-  1112  .  .  .  .  .  List: nil
-  1113  .  .  .  .  .  Closing: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:11
-  1114  .  .  .  .  }
-  1115  .  .  .  .  Results: nil
-  1116  .  .  .  }
-  1117  .  .  .  Body: *ast.BlockStmt {
-  1118  .  .  .  .  Lbrace: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:76:13
-  1119  .  .  .  .  List: []ast.Stmt (len = 1) {
-  1120  .  .  .  .  .  0: *ast.ExprStmt {
-  1121  .  .  .  .  .  .  X: *ast.CallExpr {
-  1122  .  .  .  .  .  .  .  Fun: *ast.SelectorExpr {
-  1123  .  .  .  .  .  .  .  .  X: *ast.Ident {
-  1124  .  .  .  .  .  .  .  .  .  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:2
-  1125  .  .  .  .  .  .  .  .  .  Name: "bbshare"
-  1126  .  .  .  .  .  .  .  .  .  Obj: nil
-  1127  .  .  .  .  .  .  .  .  }
-  1128  .  .  .  .  .  .  .  .  Sel: *ast.Ident {
-  1129  .  .  .  .  .  .  .  .  .  NamePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:10
-  1130  .  .  .  .  .  .  .  .  .  Name: "addMain"
-  1131  .  .  .  .  .  .  .  .  .  Obj: nil
-  1132  .  .  .  .  .  .  .  .  }
-  1133  .  .  .  .  .  .  .  }
-  1134  .  .  .  .  .  .  .  Lparen: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:17
-  1135  .  .  .  .  .  .  .  Args: []ast.Expr (len = 2) {
-  1136  .  .  .  .  .  .  .  .  0: *ast.BasicLit {
-  1137  .  .  .  .  .  .  .  .  .  ValuePos: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:18
-  1138  .  .  .  .  .  .  .  .  .  Kind: STRING
-  1139  .  .  .  .  .  .  .  .  .  Value: "\"$PACKAGE\""
-  1140  .  .  .  .  .  .  .  .  }
-  1141  .  .  .  .  .  .  .  .  1: *ast.FuncLit {
-  1142  .  .  .  .  .  .  .  .  .  Type: *ast.FuncType {
-  1143  .  .  .  .  .  .  .  .  .  .  Func: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:30
-  1144  .  .  .  .  .  .  .  .  .  .  Params: *ast.FieldList {
-  1145  .  .  .  .  .  .  .  .  .  .  .  Opening: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:34
-  1146  .  .  .  .  .  .  .  .  .  .  .  List: nil
-  1147  .  .  .  .  .  .  .  .  .  .  .  Closing: /usr/local/google/home/ryanoleary/go/src/github.com/u-root/u-root/cmds/ls/ls.go:77:35
-  1148  .  .  .  .  .  .  .  .  .  .  }
-  1149  .  .  .  .  .  .  .  .  .  .  Results: nil
-  1150  .  .  .  .  .  .  .  .  .  }
-
 		}
 		return true
 	})
