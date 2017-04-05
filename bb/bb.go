@@ -23,8 +23,10 @@ import (
 	"flag"
 	"go/ast"
 	"go/format"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io/ioutil"
 	"log"
 	"os"
@@ -46,28 +48,46 @@ import (
 	"os"
 	"path"
 	"github.com/u-root/u-root/uroot"
+	"github.com/u-root/u-root/bb/bbshare"
 )
 
-func init() {
+func runInit() bool {
 	// This getpid adds a bit of cost to each invocation (not much really)
 	// but it allows us to merge init and sh. The 600K we save is worth it.
 	if os.Args[0] != "/init" {
-		log.Printf("Skipping root file system setup since we are not /init")
-		return
+		return false
 	}
 	if os.Getpid() != 1 {
 		log.Printf("Skipping root file system setup since /init is not pid 1")
-		return
+		return false
 	}
+	install()
 	uroot.Rootfs()
+	return true
+}
 
-	for n := range forkBuiltins {
-		t := path.Join("/ubin", n)
+func install() {
+	for _, v := range bbshare.PkgNames() {
+		t := path.Join("/bin", v)
 		if err := os.Symlink("/init", t); err != nil {
-			log.Printf("Symlink /init to %v: %v", t, err)
+			log.Printf("Symlink init to %v: %v", t, err)
 		}
 	}
-	return
+}
+
+func main() {
+	if runInit() {
+		return
+	}
+
+	if err := bbshare.Run(path.Base(os.Args[0])); err != nil {
+		if len(os.Args) == 2 && os.Args[1] == "install" {
+			install()
+			return
+		}
+		log.Println(err)
+		log.Println("Valid package names are:", bbshare.PkgNames())
+	}
 }
 `
 )
@@ -157,7 +177,28 @@ var config struct {
 	Fail      bool
 }
 
-func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
+func parseType(src string) (ast.Expr, error) {
+	e, err := parser.ParseExpr("new(" + src + ")")
+	if err != nil {
+		return nil, err
+	}
+	return e.(*ast.CallExpr).Args[0], nil
+}
+
+func oneFile(dir, s string, fset *token.FileSet, f *ast.File, fs []*ast.File) error {
+	// Perform type inference on the file.
+	// See: https://github.com/golang/example/tree/master/gotypes#identifier-resolution
+	log.Println("config.CmdName", config.CmdName)
+	conf := types.Config{Importer: importer.Default()}
+	pkg, err := conf.Check(dir, fset, []*ast.File{f}, nil)
+	if err != nil {
+		// TODO
+		//log.Fatal(err) // type error
+		log.Print(err)
+		//return nil
+	}
+	log.Print(pkg.Scope())
+
 	// Change the package name.
 	//
 	// Before:
@@ -280,12 +321,38 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 		}
 		assignStmt := &ast.AssignStmt{
 			Tok: token.ASSIGN,
-			Rhs: valueSpec.Values, // TODO: we accidently turned our tree into a DAG here
+			Rhs: valueSpec.Values,
 		}
 		for _, name := range valueSpec.Names {
 			assignStmt.Lhs = append(assignStmt.Lhs, name)
 		}
 		assignStmts = append(assignStmts, assignStmt)
+	}
+	// TODO: does not work for weird tuples and iota
+	for _, valueSpec := range valueSpecs {
+		if valueSpec.Values == nil {
+			continue // declaration, but no initializer
+		}
+		if valueSpec.Names[0].Name == "_" {
+			valueSpec.Values = []ast.Expr{
+				&ast.BasicLit {
+					Kind: token.STRING,
+					Value: "\"IGNORE\"",
+				},
+			}
+			continue
+		}
+		t := pkg.Scope().Lookup(valueSpec.Names[0].Name)
+		if t == nil || t.Type() == nil {
+			log.Print("Warning: cannot resolve a type")
+			continue
+		}
+		e, err := parseType(t.Type().String())
+		if err != nil {
+			return err
+		}
+		valueSpec.Values = nil
+		valueSpec.Type = e
 	}
 	f.Decls = append(f.Decls, &ast.FuncDecl{
 		Name: ast.NewIdent("init"),
@@ -298,12 +365,8 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 				&ast.ExprStmt {
 					X: &ast.CallExpr {
 						Fun: &ast.SelectorExpr {
-							X: &ast.Ident{
-								Name: "bbshare",
-							},
-							Sel: &ast.Ident {
-								Name: "AddVarInit",
-							},
+							X: ast.NewIdent("bbshare"),
+							Sel: ast.NewIdent("AddVarInit"),
 						},
 						Args: []ast.Expr {
 							&ast.BasicLit {
@@ -353,12 +416,8 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File) error {
 					&ast.ExprStmt {
 						X: &ast.CallExpr {
 							Fun: &ast.SelectorExpr {
-								X: &ast.Ident{
-									Name: "bbshare",
-								},
-								Sel: &ast.Ident {
-									Name: "AddMain",
-								},
+								X: ast.NewIdent("bbshare"),
+								Sel: ast.NewIdent("AddMain"),
 							},
 							Args: []ast.Expr {
 								&ast.BasicLit {
@@ -445,14 +504,17 @@ func oneCmd() {
 	}
 
 	for _, f := range p {
+		fs := []*ast.File{}
+		for _, v := range f.Files {
+			fs = append(fs, v)
+		}
 		for n, v := range f.Files {
-			oneFile(packageDir, n, fset, v)
+			oneFile(packageDir, n, fset, v, fs)
 		}
 	}
 }
 
 func main() {
-	var err error
 	doConfig()
 
 	if err := os.MkdirAll(config.Bbsh, 0755); err != nil {
@@ -486,7 +548,7 @@ func main() {
 	}
 	// copy all shell files
 
-	err = filepath.Walk(path.Join(config.Uroot, cmds, "rush"), func(name string, fi os.FileInfo, err error) error {
+	/*err = filepath.Walk(path.Join(config.Uroot, cmds, "rush"), func(name string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -505,7 +567,7 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("%v", err)
-	}
+	}*/
 
 	buildinit()
 	ramfs()

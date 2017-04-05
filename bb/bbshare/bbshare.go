@@ -8,9 +8,9 @@ import (
 type initList map[string][]func()
 
 var (
-	varInits initList
-	inits    initList
-	mains    initList
+	varInits initList = initList{}
+	inits    initList = initList{}
+	mains    initList = initList{}
 )
 
 func (l *initList) add(pkgName string, f func()) {
