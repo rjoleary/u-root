@@ -46,9 +46,11 @@ package main
 import (
 	"log"
 	"os"
+	"os/exec"
 	"path"
-	"github.com/u-root/u-root/uroot"
+
 	"github.com/u-root/u-root/bb/bbshare"
+	"github.com/u-root/u-root/uroot"
 )
 
 func runInit() bool {
@@ -61,8 +63,17 @@ func runInit() bool {
 		log.Printf("Skipping root file system setup since /init is not pid 1")
 		return false
 	}
+	log.Println("Welcome to u-root (busybox)")
 	install()
 	uroot.Rootfs()
+	cmd := exec.Command("/bin/rush")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("init: all commands exited")
 	return true
 }
 
@@ -189,7 +200,9 @@ func oneFile(dir, s string, fset *token.FileSet, f *ast.File, fs []*ast.File) er
 	// Perform type inference on the file.
 	// See: https://github.com/golang/example/tree/master/gotypes#identifier-resolution
 	log.Println("config.CmdName", config.CmdName)
+	log.Println("dir", dir)
 	conf := types.Config{Importer: importer.Default()}
+	// TOOD: go install github.com/u-root/u-root/vendor/golang.org/x/sys/unix
 	pkg, err := conf.Check(dir, fset, []*ast.File{f}, nil)
 	if err != nil {
 		// TODO

@@ -7,7 +7,7 @@ package main
 import (
 	"flag"
 	"io/ioutil"
-	l "log"
+	"log"
 	"os"
 	"strings"
 
@@ -37,7 +37,7 @@ var (
 	cursor    int
 	arg       []string
 	whatIWant string
-	log       = l.New(os.Stdout, "ip: ", 0)
+	//log       = l.New(os.Stdout, "ip: ", 0)
 )
 
 // the pattern:
