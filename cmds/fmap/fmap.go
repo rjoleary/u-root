@@ -178,7 +178,7 @@ func summary(a cmdArgs) error {
 // Print human readable usage stats.
 func usage(a cmdArgs) error {
 	blockSize := 4 * 1024
-	rowLength := 32
+	rowLength := 64 // TODO: flag
 
 	buffer := make([]byte, blockSize)
 	fullBlock := bytes.Repeat([]byte{0xff}, blockSize)

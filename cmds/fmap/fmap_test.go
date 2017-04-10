@@ -18,13 +18,15 @@ import (
 const testFlash = "fake_test.flash"
 
 var tests = []struct {
-	cmd string
-	out string
+	cmd  string
+	file string
+	out  string
 }{
 	// Test summary
 	{
-		cmd: "summary",
-		out: `Fmap found at 0x5f74:
+		cmd:  "summary",
+		file: "fake_test.flash",
+		out:  `Fmap found at 0x5f74:
 	Signature:  __FMAP__
 	VerMajor:   1
 	VerMinor:   0
@@ -46,8 +48,21 @@ var tests = []struct {
 	},
 	// Test usage
 	{
+		cmd:  "usage",
+		file: "fake_test.flash",
+		out:  `Legend: '.' - full (0xff), '0' - zero (0x00), '#' - mixed
+0x00000000: 0..###
+Blocks:       6 (100.0%)
+Full (0xff):  2 (33.3%)
+Empty (0x00): 1 (16.7%)
+Mixed:        3 (50.0%)
+`,
+	},
+	// Test usage on file without fmap
+	{
 		cmd: "usage",
-		out: `Legend: '.' - full (0xff), '0' - zero (0x00), '#' - mixed
+		file: "fake_test2.flash",
+		out:  `Legend: '.' - full (0xff), '0' - zero (0x00), '#' - mixed
 0x00000000: 0..###
 Blocks:       6 (100.0%)
 Full (0xff):  2 (33.3%)
@@ -63,7 +78,7 @@ func TestFmap(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	for _, tt := range tests {
-		out, err := exec.Command(execPath, tt.cmd, testFlash).CombinedOutput()
+		out, err := exec.Command(execPath, tt.cmd, tt.file).CombinedOutput()
 		if err != nil {
 			t.Error(err)
 		}
