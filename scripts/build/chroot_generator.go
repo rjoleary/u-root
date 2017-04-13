@@ -11,6 +11,10 @@ import (
 	"path"
 )
 
+func init() {
+	archiveGenerators["chroot"] = chrootGenerator{}
+}
+
 type chrootGenerator struct {
 }
 

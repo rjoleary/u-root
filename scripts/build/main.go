@@ -6,7 +6,7 @@
 //     ramfs [OPTIONS]
 //
 // Options:
-//     -buildFormat:  one of src, bb or linker (default "src")
+//     -buildFormat:  one of src or bb (default "src")
 //     -initialCpio:  an initial cpio image to build on
 //     -d:            debug
 //     -format:       one of chroot, cpio, docker or list (default "chroot")
@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	buildFormat   = flag.String("buildFormat", "src", "one of src, bb or linker")
+	buildFormat   = flag.String("buildFormat", "src", "one of src or bb")
 	initialCpio   = flag.String("initialCpio", "", "An initial cpio image to build on")
 	debugFlag     = flag.Bool("d", false, "debug")
 	archiveFormat = flag.String("format", "chroot", "one of chroot, cpio, docker or list")
@@ -77,6 +77,11 @@ VERSION.cache`
 	debug       = func(string, ...interface{}) {}
 )
 
+var (
+	buildGenerators   = map[string]buildGenerator{}
+	archiveGenerators = map[string]archiveGenerator{}
+)
+
 func globlist(s ...string) []string {
 	// For each arg, use it as a Glob pattern and add any matches to the
 	// package list. If there are no arguments, use [a-zA-Z]* as the glob pattern.
@@ -100,21 +105,13 @@ func main() {
 	}
 
 	// Select the build generator.
-	bGen, ok := map[string]buildGenerator{
-		"src": srcGenerator{},
-		"bb":  bbGenerator{},
-	}[*buildFormat]
+	bGen, ok := buildGenerators[*buildFormat]
 	if !ok {
 		log.Fatal("invalid build generator")
 	}
 
 	// Select the archive generator.
-	aGen, ok := map[string]archiveGenerator{
-		"chroot": chrootGenerator{},
-		"cpio":   cpioGenerator{},
-		"docker": dockerGenerator{},
-		"list":   listGenerator{},
-	}[*archiveFormat]
+	aGen, ok := archiveGenerators[*archiveFormat]
 	if !ok {
 		log.Fatal("invalid archive generator")
 	}

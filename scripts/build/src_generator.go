@@ -15,6 +15,10 @@ import (
 	"sync"
 )
 
+func init() {
+	buildGenerators["src"] = srcGenerator{}
+}
+
 type srcGenerator struct {
 }
 

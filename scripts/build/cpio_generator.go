@@ -18,6 +18,10 @@ import (
 	"text/template"
 )
 
+func init() {
+	archiveGenerators["cpio"] = cpioGenerator{}
+}
+
 type cpioGenerator struct {
 }
 

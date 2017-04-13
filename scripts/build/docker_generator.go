@@ -8,6 +8,10 @@ import (
 	"log"
 )
 
+func init() {
+	archiveGenerators["docker"] = dockerGenerator{}
+}
+
 type dockerGenerator struct {
 }
 

@@ -8,6 +8,10 @@ import (
 	"fmt"
 )
 
+func init() {
+	archiveGenerators["list"] = listGenerator{}
+}
+
 type listGenerator struct {
 }
 

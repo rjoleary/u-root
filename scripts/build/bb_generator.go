@@ -8,6 +8,10 @@ import (
 	"log"
 )
 
+func init() {
+	buildGenerators["bb"] = bbGenerator{}
+}
+
 type bbGenerator struct {
 }
 
