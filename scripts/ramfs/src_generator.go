@@ -11,14 +11,14 @@ import (
 	"sync"
 )
 
-type fullGenerator struct {
+type srcGenerator struct {
 }
 
 type srcDstPair struct {
 	src, dst string
 }
 
-func (g fullGenerator) generate(fileChan chan<- file) {
+func (g srcGenerator) generate(fileChan chan<- file) {
 	wg := sync.WaitGroup{}
 
 	// Read all go source files of the selected packages along with all the
@@ -45,7 +45,7 @@ func (g fullGenerator) generate(fileChan chan<- file) {
 
 	// Compile the four binaries needed for the Go toolchain: go, compile,
 	// link and asm.
-	toolDir := path.Join(config.TempDir, fmt.Sprintf("go/pkg/tool/%v_%v", config.Goos, config.Arch))
+	toolDir := fmt.Sprintf("go/pkg/tool/%v_%v", config.Goos, config.Arch)
 	for _, v := range []srcDstPair{
 		{"src/cmd/go", "go/bin/go"},
 		{"src/cmd/compile", path.Join(toolDir, "compile")},

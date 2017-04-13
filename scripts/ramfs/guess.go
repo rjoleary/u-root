@@ -16,10 +16,10 @@ func guessgoarch() {
 		config.Arch = path.Clean(config.Arch)
 		return
 	}
-	log.Printf("GOARCH is not set, trying to guess")
+	debug("GOARCH is not set, trying to guess")
 	u, err := uroot.Uname()
 	if err != nil {
-		log.Printf("uname failed, using default amd64")
+		debug("uname failed, using default amd64")
 		config.Arch = "amd64"
 	} else {
 		switch {
@@ -42,24 +42,24 @@ func guessgoroot() {
 	config.Goroot = os.Getenv("GOROOT")
 	if config.Goroot != "" {
 		config.Goroot = path.Clean(config.Goroot)
-		log.Printf("Using %v from the environment as the GOROOT", config.Goroot)
+		debug("Using %v from the environment as the GOROOT", config.Goroot)
 		config.Godotdot = path.Dir(config.Goroot)
 		return
 	}
-	log.Print("Goroot is not set, trying to find a go binary")
+	debug("Goroot is not set, trying to find a go binary")
 	p := os.Getenv("PATH")
 	paths := strings.Split(p, ":")
 	for _, v := range paths {
 		g := path.Join(v, "go")
-		log.Printf("Try %s as the Go binary", g)
+		debug("Try %s as the Go binary", g)
 		if _, err := os.Stat(g); err == nil {
 			config.Goroot = path.Dir(v)
 			config.Godotdot = path.Dir(config.Goroot)
-			log.Printf("Guessing that goroot is %v from $PATH", config.Goroot)
+			debug("Guessing that goroot is %v from $PATH", config.Goroot)
 			return
 		}
 	}
-	log.Printf("GOROOT is not set and can't find a go binary in %v", p)
+	debug("GOROOT is not set and can't find a go binary in %v", p)
 	config.Fail = true
 }
 

@@ -6,7 +6,7 @@
 //     ramfs [OPTIONS]
 //
 // Options:
-//     -buildFormat:  one of full, bb or linker (default "full")
+//     -buildFormat:  one of src, bb or linker (default "src")
 //     -initialCpio:  an initial cpio image to build on
 //     -d:            debug
 //     -format:       one of chroot, cpio, docker or list (default "chroot")
@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	buildFormat   = flag.String("buildFormat", "full", "one of full or linker")
+	buildFormat   = flag.String("buildFormat", "src", "one of src, bb or linker")
 	initialCpio   = flag.String("initialCpio", "", "An initial cpio image to build on")
 	debugFlag     = flag.Bool("d", false, "debug")
 	archiveFormat = flag.String("format", "chroot", "one of chroot, cpio, docker or list")
@@ -125,8 +125,8 @@ func main() {
 
 	// Select the build generator.
 	bGen, ok := map[string]buildGenerator{
-		"full": fullGenerator{},
-		"bb":   bbGenerator{},
+		"src": srcGenerator{},
+		"bb":  bbGenerator{},
 	}[*buildFormat]
 	if !ok {
 		log.Fatal("invalid build generator")
