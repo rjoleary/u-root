@@ -23,6 +23,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 )
 
 var (
@@ -43,6 +44,10 @@ type file struct {
 	uid  uint32
 	gid  uint32
 	rdev uint64
+}
+
+func dev(major, minor uint64) uint64 {
+	return major<<8 + minor
 }
 
 // Generates files for inclusion into the archive.
@@ -139,6 +144,7 @@ func main() {
 	}
 
 	// Config
+	os.Setenv("CGO_ENABLED", "0")
 	guessgoarch()
 	config.Go = ""
 	config.Goos = "linux"
@@ -189,11 +195,59 @@ func main() {
 		}*/
 	}()
 
-	// Start!
-	files := make(chan file)
-	go bGen.generate(files)
-	aGen.generate(files)
+	// Generate files
+	fileChan := make(chan file)
+	go func() {
+		bGen.generate(fileChan)
+		close(fileChan)
+	}()
+	files := []file{
+		{"bin", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"dev", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"dev/console", []byte{}, 0644 | os.ModeDevice | os.ModeCharDevice, 0, 0, dev(5, 1)},
+		{"dev/loop-control", []byte{}, 0600 | os.ModeDevice | os.ModeCharDevice, 0, 0, dev(10, 237)},
+		{"dev/loop0", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 0)},
+		{"dev/loop1", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 1)},
+		{"dev/loop2", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 2)},
+		{"dev/loop3", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 3)},
+		{"dev/loop4", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 4)},
+		{"dev/loop5", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 5)},
+		{"dev/loop6", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 6)},
+		{"dev/loop7", []byte{}, 0660 | os.ModeDevice, 0, 0, dev(7, 7)},
+		{"dev/null", []byte{}, 0644 | os.ModeDevice | os.ModeCharDevice, 0, 0, dev(1, 3)},
+		{"dev/ttyS0", []byte{}, 0644 | os.ModeDevice | os.ModeCharDevice, 0, 0, dev(7, 2)},
+		{"etc", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"etc/localtime", []byte{}, 0644, 0, 0, 0},   // TODO: data
+		{"etc/resolv.conf", []byte{}, 0644, 0, 0, 0}, // TODO: data
+		{"lib64", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"tcz", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"tmp", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"usr", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+		{"usr/lib", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
+	}
+	for f := range fileChan {
+		files = append(files, f)
+	}
 
+	// Sort files
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].path == files[j].path {
+			log.Println("warning: two files named", files[i].path)
+		}
+		return files[i].path < files[j].path
+	})
+
+	// Generate archive
+	fileChan = make(chan file)
+	go func() {
+		for _, f := range files {
+			fileChan <- f
+		}
+		close(fileChan)
+	}()
+	aGen.generate(fileChan)
+
+	// Optionally execute the archive
 	if *run {
 		aGen.run()
 	}

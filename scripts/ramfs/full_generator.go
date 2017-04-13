@@ -1,8 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"go/build"
 	"io/ioutil"
 	"log"
 	"os"
@@ -14,19 +14,34 @@ import (
 type fullGenerator struct {
 }
 
-func (g fullGenerator) generate(files chan<- file) {
+type srcDstPair struct {
+	src, dst string
+}
+
+func (g fullGenerator) generate(fileChan chan<- file) {
 	wg := sync.WaitGroup{}
 
-	f, err := listGoFiles()
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-	for _, v := range f {
-		files <- file{
-			path: v,
-			mode: os.FileMode(0444),
+	// Read all go source files of the selected packages along with all the
+	// dependent source files.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		files, err := listGoFiles()
+		if err != nil {
+			log.Fatalf("%v", err)
 		}
-	}
+		for _, f := range files {
+			data, err := ioutil.ReadFile(f.src)
+			if err != nil {
+				log.Fatalf("unable to read %q: %v", f.src, err)
+			}
+			fileChan <- file{
+				path: f.dst,
+				data: data,
+				mode: os.FileMode(0444),
+			}
+		}
+	}()
 
 	// Compile the four binaries needed for the Go toolchain: go, compile,
 	// link and asm.
@@ -47,7 +62,7 @@ func (g fullGenerator) generate(files chan<- file) {
 			if err != nil {
 				log.Fatalf("unable to read %q: %v", outPath, err)
 			}
-			files <- file{
+			fileChan <- file{
 				path: v.dst,
 				data: data,
 				mode: os.FileMode(0555),
@@ -56,7 +71,6 @@ func (g fullGenerator) generate(files chan<- file) {
 	}
 
 	wg.Wait()
-	close(files)
 }
 
 // Build a Go binary.
@@ -75,30 +89,18 @@ func goBuild(srcPkgPath, outPath string) {
 
 	cmd := exec.Command("go", buildArgs...)
 	cmd.Dir = srcPkgPath
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0") // TODO: set CGO_ENABLED in main
 	if o, err := cmd.CombinedOutput(); err != nil {
 		log.Fatalf("Building %v: %v, %v\n", srcPkgPath, string(o), err)
 	}
 }
 
-type srcDstPair struct {
-	src, dst string
-}
-
 // goListPkg takes one package name, and computes all the files it needs to
 // build, separating them into Go tree files and uroot files. For now we just
 // 'go list' but hopefully later we can do this programmatically.
-func goListPkg(pkgName string) (*goDirs, error) {
-	cmd := exec.Command("go", "list", "-json", pkgName)
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0") // TODO: set CGO_ENABLED in one place
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
+func goListPkg(pkgName string) (*build.Package, error) {
+	// Perform a breadth-first-search to find all the dependencies.
+	p, err := build.Import(pkgName, path.Join(config.Gopath, "src/github.com/u-root/u-root"), 0)
 	if err != nil {
-		return nil, err
-	}
-
-	var p goDirs
-	if err := json.Unmarshal(out, &p); err != nil {
 		return nil, err
 	}
 
@@ -111,25 +113,19 @@ func goListPkg(pkgName string) (*goDirs, error) {
 		}
 	}
 
-	return &p, nil
+	return p, nil
 }
 
 // listGoFiles determines the list of Go source files for inclusion.
-func listGoFiles() ([]string, error) {
-	// For each directory in pkgList, add its files and all its
-	// dependencies. It would be nice to run go list -json with lots of
-	// package names but it produces invalid JSON. It produces a stream
-	// that is {}{}{} at the top level and the decoders don't like that.
-	// TODO: this is possible with json.Decoder
-	deps := map[string]bool{}
+func listGoFiles() ([]srcDstPair, error) {
 	for _, pkgName := range pkgList {
 		p, err := goListPkg(pkgName)
 		if err != nil {
-			log.Printf("ignoring %q due to go list error: %v", pkgName, err)
+			log.Printf("ignoring %q due to dependency error: %v", pkgName, err)
 			continue
 		}
 		debug("cmd p is %v", p)
-		for _, v := range p.Deps {
+		for _, v := range p.Imports {
 			deps[v] = true
 		}
 	}
@@ -140,14 +136,14 @@ func listGoFiles() ([]string, error) {
 		}
 	}
 
-	files := []string{}
+	files := []srcDstPair{}
 	for v := range gorootFiles {
 		goList += "\n" + path.Join("src", v)
-		files = append(files, v)
+		files = append(files, srcDstPair{path.Join(config.Goroot, "src", v), path.Join("src", v)})
 	}
 	for v := range urootFiles {
 		urootList += "\n" + path.Join("src", v)
-		files = append(files, v)
+		files = append(files, srcDstPair{path.Join(config.Gopath, "src", v), path.Join("src", v)})
 	}
 	return files, nil
 }
