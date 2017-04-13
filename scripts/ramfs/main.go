@@ -37,30 +37,6 @@ var (
 	existingInit  = flag.Bool("existingInit", false, "if there is an existing init, do not replace it")
 )
 
-type file struct {
-	path string
-	data []byte
-	mode os.FileMode
-	uid  uint32
-	gid  uint32
-	rdev uint64
-}
-
-func dev(major, minor uint64) uint64 {
-	return major<<8 + minor
-}
-
-// Generates files for inclusion into the archive.
-type buildGenerator interface {
-	generate(files chan<- file)
-}
-
-// Append files to the archive.
-type archiveGenerator interface {
-	generate(files <-chan file)
-	run() error
-}
-
 type copyfiles struct {
 	dir  string
 	spec string
