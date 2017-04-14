@@ -19,11 +19,11 @@ type file struct {
 
 // Generates files for inclusion into the archive.
 type buildGenerator interface {
-	generate(files chan<- file)
+	generate() ([]file, error)
 }
 
-// Append files to the archive.
+// Create an archive given a slice of files.
 type archiveGenerator interface {
-	generate(files <-chan file)
+	generate([]file) error
 	run() error
 }

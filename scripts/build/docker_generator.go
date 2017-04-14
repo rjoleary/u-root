@@ -5,7 +5,7 @@
 package main
 
 import (
-	"log"
+	"errors"
 )
 
 func init() {
@@ -15,11 +15,10 @@ func init() {
 type dockerGenerator struct {
 }
 
-func (g dockerGenerator) generate(files <-chan file) {
-	log.Fatal("not implemented yet")
+func (g dockerGenerator) generate(files []file) error {
+	return errors.New("not implemented yet")
 }
 
 func (g dockerGenerator) run() error {
-	log.Fatal("not implemented yet")
-	return nil
+	return errors.New("not implemented yet")
 }

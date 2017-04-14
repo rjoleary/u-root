@@ -5,7 +5,7 @@
 package main
 
 import (
-	"log"
+	"errors"
 )
 
 func init() {
@@ -15,6 +15,6 @@ func init() {
 type bbGenerator struct {
 }
 
-func (g bbGenerator) generate(files chan<- file) {
-	log.Fatal("not implemented yet")
+func (g bbGenerator) generate() ([]file, error) {
+	return nil, errors.New("not implemented yet")
 }

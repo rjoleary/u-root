@@ -169,12 +169,13 @@ func main() {
 	}()
 
 	// Generate files
-	fileChan := make(chan file)
-	go func() {
-		bGen.generate(fileChan)
-		close(fileChan)
-	}()
-	files := []file{
+	files, err := bGen.generate()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Add device files
+	files = append(files, []file{
 		{"bin", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
 		{"dev", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
 		{"dev/console", []byte{}, 0644 | os.ModeDevice | os.ModeCharDevice, 0, 0, dev(5, 1)},
@@ -197,10 +198,7 @@ func main() {
 		{"tmp", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
 		{"usr", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
 		{"usr/lib", []byte{}, 0755 | os.ModeDir, 0, 0, 0},
-	}
-	for f := range fileChan {
-		files = append(files, f)
-	}
+	}...)
 
 	// Sort files
 	sort.Slice(files, func(i, j int) bool {
@@ -211,17 +209,14 @@ func main() {
 	})
 
 	// Generate archive
-	fileChan = make(chan file)
-	go func() {
-		for _, f := range files {
-			fileChan <- f
-		}
-		close(fileChan)
-	}()
-	aGen.generate(fileChan)
+	if err := aGen.generate(files); err != nil {
+		log.Fatal(err)
+	}
 
 	// Optionally execute the archive
 	if *run {
-		aGen.run()
+		if err := aGen.run(); err != nil {
+			log.Fatal(err)
+		}
 	}
 }

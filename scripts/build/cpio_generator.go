@@ -25,7 +25,7 @@ func init() {
 type cpioGenerator struct {
 }
 
-func (g cpioGenerator) generate(files <-chan file) {
+func (g cpioGenerator) generate(files []file) error {
 	if *initialCpio != "" {
 		f, err := ioutil.ReadFile(*initialCpio)
 		if err != nil {
@@ -140,11 +140,7 @@ func (g cpioGenerator) generate(files <-chan file) {
 	defer func() {
 		log.Printf("Output file is in %v\n", oname)
 	}()
-
-	for f := range files {
-		// TODO
-		_ = f
-	}
+	return nil
 }
 
 func (g cpioGenerator) run() error {

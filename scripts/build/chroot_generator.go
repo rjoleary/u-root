@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"os"
 	"os/exec"
@@ -18,7 +19,8 @@ func init() {
 type chrootGenerator struct {
 }
 
-func (g chrootGenerator) generate(files <-chan file) {
+func (g chrootGenerator) generate(files []file) error {
+	return errors.New("not implemented yet")
 }
 
 func (g chrootGenerator) run() error {

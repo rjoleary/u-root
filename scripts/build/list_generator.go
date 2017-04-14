@@ -5,6 +5,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -15,11 +16,9 @@ func init() {
 type listGenerator struct {
 }
 
-func (g listGenerator) generate(fileChan <-chan file) {
-	count := 0
+func (g listGenerator) generate(files []file) error {
 	totalSize := 0
-	for f := range fileChan {
-		count++
+	for _, f := range files {
 		if f.rdev == 0 {
 			fmt.Printf("%v\t%d\t%q\n", f.mode, len(f.data), f.path)
 			totalSize += len(f.data)
@@ -27,11 +26,11 @@ func (g listGenerator) generate(fileChan <-chan file) {
 			fmt.Printf("%v\t%d, %d\t%q\n", f.mode, major(f.rdev), minor(f.rdev), f.path)
 		}
 	}
-	fmt.Println("Number of files:", count)
+	fmt.Println("Number of files:", len(files))
 	fmt.Printf("Total size: %.1f MiB (%d bytes)\n", float64(totalSize)/1024/1024, totalSize)
+	return nil
 }
 
 func (g listGenerator) run() error {
-	fmt.Println("Nothing to run")
-	return nil
+	return errors.New("not implemented")
 }

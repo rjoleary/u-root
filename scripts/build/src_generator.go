@@ -26,7 +26,8 @@ type srcDstPair struct {
 	src, dst string
 }
 
-func (g srcGenerator) generate(fileChan chan<- file) {
+func (g srcGenerator) generate() ([]file, error) {
+	fileChan := make(chan file)
 	wg := sync.WaitGroup{}
 
 	// Read all go source files of the selected packages along with all the
@@ -78,7 +79,17 @@ func (g srcGenerator) generate(fileChan chan<- file) {
 		}(v)
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(fileChan)
+	}()
+
+	// Copy the files from the channel into a slice.
+	files := []file{}
+	for f := range fileChan {
+		files = append(files, f)
+	}
+	return files, nil
 }
 
 // Build a Go binary.
