@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/u-root/u-root/pkg/qemu"
@@ -11,11 +10,10 @@ func testWithQEMU(t *testing.T, init string) *qemu.QEMU {
 	// TODO: check if QEMU variable is set.
 
 	q := &qemu.QEMU{
-		Init: init,
-		Kernel: "testdata/bzImage_amd64", // TODO: select a better kernel
 		InitRamfs: "/tmp/initramfs.linux_amd64.cpio", // TODO: build on-the-fly
+		Kernel: "testdata/bzImage_amd64", // TODO: select a better kernel
 	}
-	t.Log("command line: '" + strings.Join(q.CmdLine(), "' '") + "'")
+	t.Logf("command line:\n%s", q.CmdLineQuoted())
 	if err := q.Start(); err != nil {
 		t.Fatal("could not spawn QEMU: ", err)
 	}
