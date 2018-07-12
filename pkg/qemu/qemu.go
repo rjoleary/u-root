@@ -28,13 +28,13 @@ var DefaultTimeout = 5 * time.Second
 
 // QEMU is filled and pass to `Start()`.
 type QEMU struct {
-	// Path to the bzImage kernel.
+	// Path to the bzImage kernel
 	Kernel string
 
-	// Path to the initramfs.
+	// Path to the initramfs
 	InitRamfs string
 
-	// Extra kernel arguments.
+	// Extra kernel arguments
 	KernelArgs string
 
 	gExpect *expect.GExpect
