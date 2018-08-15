@@ -1,0 +1,8 @@
+# Releases
+
+## v1.0.0 (2018-08-15)
+
+- Initial release
+- Tested with:
+  - Linux 4.17
+  - Golang 1.10.3
