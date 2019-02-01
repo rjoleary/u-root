@@ -192,7 +192,7 @@ func srv(ctx context.Context) (net.Conn, *exec.Cmd, error) {
 	return srvSock, c, nil
 }
 
-func copy(w io.Writer, ws string, r io.Reader, rs string) {
+func dbgCopy(w io.Writer, ws string, r io.Reader, rs string) {
 	b := make([]byte, 8192)
 	for {
 		n, err := r.Read(b)
@@ -205,7 +205,6 @@ func copy(w io.Writer, ws string, r io.Reader, rs string) {
 		if err != nil {
 			return
 		}
-
 	}
 }
 
@@ -225,13 +224,13 @@ func forward(l net.Listener, s net.Conn) error {
 		go io.Copy(c, s)
 		return nil
 	}
-	go copy(s, "9p server", c, "cpu client")
-	go copy(c, "cpu client", s, "9p server")
+	go dbgCopy(s, "9p server", c, "cpu client")
+	go dbgCopy(c, "cpu client", s, "9p server")
 	return nil
 }
 
 // To make sure defer gets run and you tty is sane on exit
-func realMain(a string) error {
+func runClient(a string) error {
 	c, err := config(*keyFile)
 	if err != nil {
 		return err
@@ -292,6 +291,7 @@ func env(s *ssh.Session) {
 		}
 	}
 }
+
 func shell(client *ssh.Client, a, port9p string) error {
 	t, err := termios.New()
 	if err != nil {
@@ -393,19 +393,19 @@ func init() {
 		}
 	}
 }
+
 func main() {
+	a := strings.Join(flag.Args(), " ")
 	if *remote {
-		if err := runRemote(strings.Join(flag.Args(), " "), *port9p); err != nil {
-			log.Printf("%v\n", err)
+		if err := runRemote(a, *port9p); err != nil {
+			log.Fatal(err)
 		}
 		return
 	}
-	a := strings.Join(flag.Args(), " ")
 	if a == "" {
 		a = os.Getenv("SHELL")
 	}
-	if err := realMain(a); err != nil {
-		log.Printf("%v\n", err)
+	if err := runClient(a); err != nil {
+		log.Fatal(err)
 	}
-
 }
