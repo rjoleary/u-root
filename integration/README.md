@@ -132,6 +132,13 @@ go test [-v] -test.run=TestDhclient
 *To avoid having to do this every time, check the instructions for the RUNLOCAL
 script.*
 
+## Kernel Code Coverage
+
+For kernel code coverage, build your kernel with the CONFIGs here:
+https://www.kernel.org/doc/html/v4.14/dev-tools/gcov.html
+
+The kernel gcda files get saved to /tmp/uroot-coverage/
+
 ## Writing a New Test
 
 To write a new test, first decide which of the options from the previous

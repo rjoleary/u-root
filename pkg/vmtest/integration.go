@@ -75,7 +75,19 @@ type Options struct {
 
 	// Use virtual vfat rather than 9pfs
 	UseVVFAT bool
+
+	// By default, if your kernel has CONFIG_DEBUG_FS=y and
+	// CONFIG_GCOV_KERNEL=y enabled, the kernel's coverage will be
+	// collected and saved to:
+	//   /tmp/uroot-coverage/{{ test name }}/{{ instance }}/kernel_coverage.tar
+	NoKernelCoverage bool
 }
+
+const coveragePath = "/tmp/uroot-coverage"
+
+// Keeps track of the number of instances so we do not overlap coverage
+// reports.
+var instance int
 
 func last(s string) string {
 	l := strings.Split(s, ".")
@@ -154,8 +166,34 @@ func SkipWithoutQEMU(t *testing.T) {
 	}
 }
 
+func saveCoverage(t *testing.T, path string) error {
+	// Coverage may not have been collected, for example if the kernel is
+	// not built with CONFIG_GCOV_KERNEL.
+	if fi, err := os.Stat(path); os.IsNotExist(err) || (err != nil && !fi.Mode().IsRegular()) {
+		return nil
+	}
+
+	// Move coverage to common directory.
+	uniqueCoveragePath := filepath.Join(coveragePath, t.Name(), fmt.Sprintf("%d", instance))
+	if err := os.MkdirAll(uniqueCoveragePath, 0770); err != nil {
+		return err
+	}
+	if err := os.Rename(path, filepath.Join(uniqueCoveragePath, filepath.Base(path))); err != nil {
+		return err
+	}
+	return nil
+}
+
 func QEMUTest(t *testing.T, o *Options) (*qemu.VM, func()) {
 	SkipWithoutQEMU(t)
+
+	// Delete any previous coverage data.
+	if instance == 0 {
+		if err := os.RemoveAll(coveragePath); err != nil && !os.IsNotExist(err) {
+			t.Logf("Error erasing previous coverage: %v", err)
+		}
+	}
+	instance++
 
 	if len(o.Name) == 0 {
 		o.Name = callerName(2)
@@ -188,6 +226,12 @@ func QEMUTest(t *testing.T, o *Options) (*qemu.VM, func()) {
 
 	return vm, func() {
 		vm.Close()
+		if !o.NoKernelCoverage {
+			if err := saveCoverage(t, filepath.Join(o.TmpDir, "kernel_coverage.tar")); err != nil {
+				t.Logf("Error saving kernel coverage: %v", err)
+			}
+		}
+
 		t.Logf("QEMU command line to reproduce %s:\n%s", o.Name, vm.CmdlineQuoted())
 		if t.Failed() {
 			t.Log("Keeping temp dir: ", o.TmpDir)
@@ -254,6 +298,10 @@ func QEMU(o *Options) (*qemu.Options, error) {
 		dir = qemu.P9Directory{Dir: o.TmpDir, Arch: TestArch()}
 	}
 	o.QEMUOpts.Devices = append(o.QEMUOpts.Devices, qemu.VirtioRandom{}, dir)
+
+	if o.NoKernelCoverage {
+		o.QEMUOpts.KernelArgs += " UROOT_NO_KERNEL_COVERAGE"
+	}
 
 	return &o.QEMUOpts, nil
 }
