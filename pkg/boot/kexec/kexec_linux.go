@@ -6,11 +6,22 @@ package kexec
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"syscall"
+
+	"github.com/u-root/u-root/pkg/watchdog"
 )
 
 // Reboot executes a kernel previously loaded with FileInit.
 func Reboot() error {
+	// Optionally disarm the watchdog.
+	if os.Getenv("UROOT_KEXEC_DISARM_WATCHDOG") == "1" {
+		if err := watchdog.DisarmDaemon(); err != nil {
+			log.Printf("Error disarming watchdog: %v", err)
+		}
+	}
+
 	if err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_KEXEC); err != nil {
 		return fmt.Errorf("sys_reboot(..., kexec) = %v", err)
 	}
